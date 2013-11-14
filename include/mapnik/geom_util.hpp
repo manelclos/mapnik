@@ -350,10 +350,14 @@ bool hit_test(PathType & path, double x, double y, double tol)
             y0 = y1;
             continue;
         }
+
         if ((((y1 <= y) && (y < y0)) ||
              ((y0 <= y) && (y < y1))) &&
             (x < (x0 - x1) * (y - y1)/ (y0 - y1) + x1))
             inside=!inside;
+
+        double distance = point_to_segment_distance(x, y, x0, y0, x1, y1);
+        std::cout << "HIT_TEST: " << " x0: " << x0 << " - y0: " << y0 << " x1: " << x1 << " - y1: " << y1 << " - distance: " << distance << " - tol: " << tol << " - inside: " << inside << std::endl;
 
         x0 = x1;
         y0 = y1;
