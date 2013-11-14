@@ -14,6 +14,18 @@ def setup():
     # from another directory we need to chdir()
     os.chdir(execution_path('.'))
 
+def test_raster_symbolizer():
+    s = mapnik.RasterSymbolizer()
+    eq_(s.comp_op,mapnik.CompositeOp.src_over) # note: mode is deprecated
+    eq_(s.scaling,mapnik.scaling_method.NEAR)
+    eq_(s.opacity,1.0)
+    eq_(s.colorizer,None)
+    eq_(s.filter_factor,-1)
+    eq_(s.mesh_size,16)
+    eq_(s.premultiplied,None)
+    s.premultiplied = True
+    eq_(s.premultiplied,True)
+
 def test_line_pattern():
     s = mapnik.LinePatternSymbolizer(mapnik.PathExpression('../data/images/dummy.png'))
     eq_(s.filename, '../data/images/dummy.png')
@@ -75,6 +87,7 @@ def test_text_symbolizer():
     s = mapnik.TextSymbolizer()
     eq_(s.comp_op,mapnik.CompositeOp.src_over)
     eq_(s.clip,True)
+    eq_(s.halo_rasterizer,mapnik.halo_rasterizer.FULL)
 
     # https://github.com/mapnik/mapnik/issues/1420
     eq_(s.text_transform, mapnik.text_transform.NONE)
@@ -170,11 +183,11 @@ def test_shield_symbolizer_modify():
     def check_transform(expr, expect_str=None):
         s.transform = expr
         eq_(s.transform, expr if expect_str is None else expect_str)
-    check_transform("matrix(1 2 3 4 5 6)", "matrix(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)")
+    check_transform("matrix(1 2 3 4 5 6)", "matrix(1, 2, 3, 4, 5, 6)")
     check_transform("matrix(1, 2, 3, 4, 5, 6 +7)", "matrix(1, 2, 3, 4, 5, (6+7))")
     check_transform("rotate([a])")
     check_transform("rotate([a] -2)", "rotate(([a]-2))")
-    check_transform("rotate([a] -2 -3)", "rotate([a], -2.0, -3.0)")
+    check_transform("rotate([a] -2 -3)", "rotate([a], -2, -3)")
     check_transform("rotate([a] -2 -3 -4)", "rotate(((([a]-2)-3)-4))")
     check_transform("rotate([a] -2, 3, 4)", "rotate(([a]-2), 3, 4)")
     check_transform("translate([tx]) rotate([a])")
@@ -209,6 +222,7 @@ def test_markers_symbolizer():
     eq_(p.fill_opacity,None)
     eq_(p.filename,'shape://ellipse')
     eq_(p.placement,mapnik.marker_placement.POINT_PLACEMENT)
+    eq_(p.multi_policy,mapnik.marker_multi_policy.EACH)
     eq_(p.fill,None)
     eq_(p.ignore_placement,False)
     eq_(p.spacing,100)
@@ -218,7 +232,7 @@ def test_markers_symbolizer():
     eq_(p.transform,'')
     eq_(p.clip,True)
     eq_(p.comp_op,mapnik.CompositeOp.src_over)
-    
+
 
     p.width = mapnik.Expression('12')
     p.height = mapnik.Expression('12')
@@ -239,10 +253,14 @@ def test_markers_symbolizer():
     p.allow_overlap = True
     p.opacity = 0.5
     p.fill_opacity = 0.5
+    p.placement = mapnik.marker_placement.LINE_PLACEMENT
+    p.multi_policy = mapnik.marker_multi_policy.WHOLE
 
     eq_(p.allow_overlap, True)
     eq_(p.opacity, 0.5)
     eq_(p.fill_opacity, 0.5)
+    eq_(p.multi_policy,mapnik.marker_multi_policy.WHOLE)
+    eq_(p.placement,mapnik.marker_placement.LINE_PLACEMENT)
 
     #https://github.com/mapnik/mapnik/issues/1285
     #https://github.com/mapnik/mapnik/issues/1427
@@ -317,6 +335,16 @@ def test_map_init():
 
     m = mapnik.Map(256, 256, '+proj=latlong')
     eq_(m.srs, '+proj=latlong')
+
+def test_map_style_access():
+    m = mapnik.Map(256, 256)
+    sty = mapnik.Style()
+    m.append_style("style",sty)
+    styles = list(m.styles)
+    eq_(len(styles),1)
+    eq_(styles[0][0],'style')
+    # returns a copy so let's just check it is the right instance
+    eq_(isinstance(styles[0][1],mapnik.Style),True)
 
 def test_map_maximum_extent_modification():
     m = mapnik.Map(256, 256)

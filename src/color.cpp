@@ -25,6 +25,9 @@
 #include <mapnik/color_factory.hpp>
 #include <mapnik/config_error.hpp>
 
+// agg
+#include "agg_color_rgba.h"
+
 // boost
 #include <boost/format.hpp>
 
@@ -44,17 +47,17 @@ std::string color::to_string() const
     if (alpha_ == 255)
     {
         ss << "rgb("
-           << red()   << ","
-           << green() << ","
-           << blue()  << ")";
+           << static_cast<unsigned>(red())   << ","
+           << static_cast<unsigned>(green()) << ","
+           << static_cast<unsigned>(blue())  << ")";
     }
     else
     {
         ss << "rgba("
-           << red()   << ","
-           << green() << ","
-           << blue()  << ","
-           << alpha()/255.0 << ")";
+           << static_cast<unsigned>(red())   << ","
+           << static_cast<unsigned>(green()) << ","
+           << static_cast<unsigned>(blue()) << ","
+           << alpha() / 255.0 << ")";
     }
     return ss.str();
 }
@@ -64,19 +67,37 @@ std::string color::to_hex_string() const
     if (alpha_ == 255 )
     {
         return (boost::format("#%1$02x%2$02x%3$02x")
-                % red()
-                % green()
-                % blue() ).str();
+                % static_cast<unsigned>(red())
+                % static_cast<unsigned>(green())
+                % static_cast<unsigned>(blue())).str();
     }
     else
     {
         return (boost::format("#%1$02x%2$02x%3$02x%4$02x")
-                % red()
-                % green()
-                % blue()
-                % alpha()).str();
+                % static_cast<unsigned>(red())
+                % static_cast<unsigned>(green())
+                % static_cast<unsigned>(blue())
+                % static_cast<unsigned>(alpha())).str();
     }
 }
 
+void color::premultiply()
+{
+    agg::rgba8 pre_c = agg::rgba8(red_,green_,blue_,alpha_);
+    pre_c.premultiply();
+    red_ = pre_c.r;
+    green_ = pre_c.g;
+    blue_ = pre_c.b;
 }
 
+void color::demultiply()
+{
+    // note: this darkens too much: https://github.com/mapnik/mapnik/issues/1519
+    agg::rgba8 pre_c = agg::rgba8(red_,green_,blue_,alpha_);
+    pre_c.demultiply();
+    red_ = pre_c.r;
+    green_ = pre_c.g;
+    blue_ = pre_c.b;
+}
+
+}

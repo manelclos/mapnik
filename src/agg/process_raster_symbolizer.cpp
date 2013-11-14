@@ -21,10 +21,13 @@
  *****************************************************************************/
 
 // mapnik
+#include <mapnik/feature.hpp>
 #include <mapnik/agg_renderer.hpp>
 #include <mapnik/image_scaling.hpp>
 #include <mapnik/image_compositing.hpp>
 #include <mapnik/graphics.hpp>
+#include <mapnik/raster_symbolizer.hpp>
+#include <mapnik/raster_colorizer.hpp>
 #include <mapnik/agg_rasterizer.hpp>
 #include <mapnik/image_data.hpp>
 #include <mapnik/image_util.hpp>
@@ -35,6 +38,10 @@
 
 // stl
 #include <cmath>
+
+// agg
+#include "agg_rendering_buffer.h"
+#include "agg_pixfmt_rgba.h"
 
 
 namespace mapnik {
@@ -56,18 +63,33 @@ void agg_renderer<T>::process(raster_symbolizer const& sym,
         box2d<double> target_ext = box2d<double>(source->ext_);
         prj_trans.backward(target_ext, PROJ_ENVELOPE_POINTS);
         box2d<double> ext = t_.forward(target_ext);
-        int start_x = static_cast<int>(ext.minx());
-        int start_y = static_cast<int>(ext.miny());
-        int end_x = static_cast<int>(ceil(ext.maxx()));
-        int end_y = static_cast<int>(ceil(ext.maxy()));
+        int start_x = static_cast<int>(std::floor(ext.minx()+.5));
+        int start_y = static_cast<int>(std::floor(ext.miny()+.5));
+        int end_x = static_cast<int>(std::floor(ext.maxx()+.5));
+        int end_y = static_cast<int>(std::floor(ext.maxy()+.5));
         int raster_width = end_x - start_x;
         int raster_height = end_y - start_y;
         if (raster_width > 0 && raster_height > 0)
         {
-            image_data_32 target_data(raster_width,raster_height);
-            raster target(target_ext, target_data);
+            raster target(target_ext, raster_width,raster_height);
             scaling_method_e scaling_method = sym.get_scaling_method();
             double filter_radius = sym.calculate_filter_factor();
+            bool premultiply_source = !source->premultiplied_alpha_;
+            boost::optional<bool> is_premultiplied = sym.premultiplied();
+            if (is_premultiplied)
+            {
+                if (*is_premultiplied) premultiply_source = false;
+                else premultiply_source = true;
+            }
+            if (premultiply_source)
+            {
+                agg::rendering_buffer buffer(source->data_.getBytes(),
+                                             source->data_.width(),
+                                             source->data_.height(),
+                                             source->data_.width() * 4);
+                agg::pixfmt_rgba32 pixf(buffer);
+                pixf.premultiply();
+            }
             if (!prj_trans.equal())
             {
                 double offset_x = ext.minx() - start_x;
@@ -82,21 +104,28 @@ void agg_renderer<T>::process(raster_symbolizer const& sym,
             {
                 if (scaling_method == SCALING_BILINEAR8)
                 {
-                    scale_image_bilinear8<image_data_32>(target.data_,source->data_, 0.0, 0.0);
+                    scale_image_bilinear8<image_data_32>(target.data_,
+                                                         source->data_,
+                                                         0.0,
+                                                         0.0);
                 }
                 else
                 {
-                    double scaling_ratio = ext.width() / source->data_.width();
+                    double image_ratio_x = ext.width() / source->data_.width();
+                    double image_ratio_y = ext.height() / source->data_.height();
                     scale_image_agg<image_data_32>(target.data_,
                                                    source->data_,
                                                    scaling_method,
-                                                   scaling_ratio,
+                                                   image_ratio_x,
+                                                   image_ratio_y,
                                                    0.0,
                                                    0.0,
                                                    filter_radius);
                 }
             }
-            composite(current_buffer_->data(), target.data_, sym.comp_op(), sym.get_opacity(), start_x, start_y, true);
+            composite(current_buffer_->data(), target.data_,
+                      sym.comp_op(), sym.get_opacity(),
+                      start_x, start_y, false);
         }
     }
 }

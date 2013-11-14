@@ -53,22 +53,21 @@ using mapnik::box2d;
 class osm_datasource : public datasource
 {
 public:
-    osm_datasource(const parameters& params, bool bind = true);
+    osm_datasource(const parameters& params);
     virtual ~osm_datasource();
     mapnik::datasource::datasource_t type() const;
     static const char * name();
     featureset_ptr features(const query& q) const;
-    featureset_ptr features_at_point(coord2d const& pt) const;
+    featureset_ptr features_at_point(coord2d const& pt, double tol = 0) const;
     box2d<double> envelope() const;
     boost::optional<mapnik::datasource::geometry_t> get_geometry_type() const;
     layer_descriptor get_descriptor() const;
-    void bind() const;
 
 private:
-    mutable box2d<double> extent_;
-    mutable osm_dataset* osm_data_;
+    box2d<double> extent_;
+    osm_dataset* osm_data_;
     mapnik::datasource::datasource_t type_;
-    mutable layer_descriptor desc_;
+    layer_descriptor desc_;
 };
 
 #endif // OSM_DATASOURCE_HPP

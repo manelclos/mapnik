@@ -3,75 +3,62 @@
 import sys
 import mapnik
 
+try:
+    import json
+except ImportError:
+    import simplejson as json
+
 COMPUTE_THRESHOLD = 16
 
-errors = []
-passed = 0
-
 # returns true if pixels are not identical
-def compare_pixels(pixel1, pixel2):
+def compare_pixels(pixel1, pixel2, alpha=True):
     if pixel1 == pixel2:
         return False
     r_diff = abs((pixel1 & 0xff) - (pixel2 & 0xff))
     g_diff = abs(((pixel1 >> 8) & 0xff) - ((pixel2 >> 8) & 0xff))
     b_diff = abs(((pixel1 >> 16) & 0xff)- ((pixel2 >> 16) & 0xff))
-    a_diff = abs(((pixel1 >> 24) & 0xff) - ((pixel2 >> 24) & 0xff))
-    if(r_diff > COMPUTE_THRESHOLD or
-       g_diff > COMPUTE_THRESHOLD or
-       b_diff > COMPUTE_THRESHOLD or
-       a_diff > COMPUTE_THRESHOLD):
-        return True
+    if alpha:
+        a_diff = abs(((pixel1 >> 24) & 0xff) - ((pixel2 >> 24) & 0xff))
+        if(r_diff > COMPUTE_THRESHOLD or
+           g_diff > COMPUTE_THRESHOLD or
+           b_diff > COMPUTE_THRESHOLD or
+           a_diff > COMPUTE_THRESHOLD):
+            return True
     else:
-        return False
-
-def fail(actual,expected):
-    global errors
-    errors.append(('N/A', actual, expected))
+        if(r_diff > COMPUTE_THRESHOLD or
+           g_diff > COMPUTE_THRESHOLD or
+           b_diff > COMPUTE_THRESHOLD):
+            return True
+    return False
 
 # compare two images and return number of different pixels
-def compare(actual, expected):
-    global errors
-    global passed
+def compare(actual, expected, alpha=True):
     im1 = mapnik.Image.open(actual)
     try:
         im2 = mapnik.Image.open(expected)
     except RuntimeError:
-        errors.append((None, actual, expected))
-        return -1
+        return 99999990
     diff = 0
     pixels = im1.width() * im1.height()
     delta_pixels = (im2.width() * im2.height()) - pixels
     if delta_pixels != 0:
-        errors.append((delta_pixels, actual, expected))
         return delta_pixels
     for x in range(0,im1.width(),2):
         for y in range(0,im1.height(),2):
-            if compare_pixels(im1.get_pixel(x,y),im2.get_pixel(x,y)):
+            if compare_pixels(im1.get_pixel(x,y),im2.get_pixel(x,y),alpha=alpha):
                 diff += 1
-    if diff != 0:
-        errors.append((diff, actual, expected))
-    passed += 1
     return diff
 
-def summary(generate=False):
+def compare_grids(actual, expected, threshold=0, alpha=True):
     global errors
     global passed
-    print "-"*80
-    print "Visual text rendering summary:"
-    print "-"*80
-    if len(errors) != 0:
-        for error in errors:
-            if (error[0] is None):
-                if generate:
-                    actual = open(error[1],'r').read()
-                    open(error[2],'wb').write(actual)
-                    print "Generating reference image: '%s'" % error[2]
-                    continue
-                else:
-                    print "Could not verify %s: No reference image found!" % error[1]
-            else:
-                print "\x1b[34m%s different pixels\x1b[0m:\n\t%s (\x1b[31mactual\x1b[0m)\n\t%s (\x1b[32mexpected\x1b[0m)" % error
-        sys.exit(1)
-    else:
-        print 'All %s tests passed: \x1b[1;32m✓ \x1b[0m' % passed
-        sys.exit(0)
+    im1 = json.loads(open(actual).read())
+    try:
+        im2 = json.loads(open(expected).read())
+    except RuntimeError:
+        return 9999990
+    equal = (im1 == im2)
+    # TODO - real diffing
+    if not equal:
+        return 99999999
+    return 0

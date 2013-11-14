@@ -8,6 +8,56 @@ For a complete change history, see the git log.
 
 ## Future
 
+- Added new mapnik-config options: `git-describe`, `defines`, `includes`, `dep-includes`, and `cxxflags` (#1443)
+
+- Added `text-halo-rasterizer` property. Set to `fast` for lower quality but faster
+  halo rendering (#1298)
+
+- Added ability to access style list from map by (name,obj) in python (#1725)
+
+- Added `is_solid` method to python mapnik.Image and mapnik.ImageView classes (#1728)
+
+- Changed scale_denominator C++ interface to take scale as first argument rather than map.
+
+- Added support for `background-image` in cairo_renderer (#1724)
+
+- Added Layer `buffer-size` that can be used to override Map `buffer-size` to avoid
+  over-fetching of data that does not need to be buffered as much as other layers.
+  Map level `buffer-size` will be default if layers do not set the option. Renamed a
+  previously undocumented parameter by the same name that impacted clipping extent and
+  was not needed (clipping padding should likely be a symbolizer level option) (#1566)
+
+- Fixed building symbolizer rendering to be fully sensitive to alpha (8b66128c892 / bc8ea1c5a7a)
+
+- Added 64 bit integer support in the grid_renderer (#1662)
+
+- `<Filter>[attr]</Filter>` now returns false if attr is an empty string (#1665)
+
+- Added 64 bit integer support in expressions and feature ids (#1661,#1662)
+
+- Added support for DBF `Logical` type: #1614
+
+- Added serialization of `line-offset` to save_map (#1562)
+
+- Enabled default input plugin directory and fonts path to be set inherited from environment settings in
+  python bindings to make it easier to run tests locally (#1594). New environment settings are:
+    - MAPNIK_INPUT_PLUGINS_DIRECTORY
+    - MAPNIK_FONT_DIRECTORY
+
+- Added support for controlling rendering behavior of markers on multi-geometries `marker-multi-policy` (#1555,#1573)
+
+- Added alternative PNG/ZLIB implementation (`miniz`) that can be enabled with `e=miniz` (#1554)
+
+- Added support for setting zlib `Z_FIXED` strategy with format string: `png:z=fixed`
+
+- Fixed handling of transparency level option in Octree-based PNG encoding (#1556)
+
+- Faster rendering of rasters by reducing memory allocation of temporary buffers (#1516)
+
+- Added ability to pass a pre-created collision detector to the cairo renderer (#1444)
+
+- Tolerance parameter is now supported for querying datasources at a given point (#503/#1499)
+
 - Improved detection of newlines in CSV files - now more robust in the face of mixed newline types (#1497)
 
 - Allow style level compositing operations to work outside of featureset extents across tiled requests (#1477)
@@ -78,7 +128,7 @@ Released Aug 23, 2012
 - Improved logging/debugging system with release logs and file redirection (https://github.com/mapnik/mapnik/wiki/Runtime-Logging) (#937 and partially #986, #467)
 
 - GDAL: allow setting nodata value on the fly (will override value if nodata is set in data) (#1161)
- 
+
 - GDAL: respect nodata for paletted/colormapped images (#1160)
 
 - PostGIS: Added a new option called `autodetect_key_field` (by default false) that if true will
@@ -134,7 +184,7 @@ Released Aug 3, 2012
 
 - Fixed possible breakage registering plugins via python if a custom PREFIX or DESTDIR was used (e.g. macports/homebrew) (#1171)
 
-- Fixed memory leak in the case of proj >= 4.8 and a projection initialization error (#1173) 
+- Fixed memory leak in the case of proj >= 4.8 and a projection initialization error (#1173)
 
 
 ## Mapnik 2.0.1

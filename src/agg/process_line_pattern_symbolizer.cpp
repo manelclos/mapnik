@@ -20,19 +20,20 @@
  *
  *****************************************************************************/
 
-// boost
-#include <boost/foreach.hpp>
 // mapnik
+#include <mapnik/feature.hpp>
 #include <mapnik/debug.hpp>
 #include <mapnik/graphics.hpp>
 #include <mapnik/agg_renderer.hpp>
 #include <mapnik/agg_rasterizer.hpp>
 #include <mapnik/agg_pattern_source.hpp>
-#include <mapnik/expression_evaluator.hpp>
 #include <mapnik/marker.hpp>
 #include <mapnik/marker_cache.hpp>
 #include <mapnik/line_pattern_symbolizer.hpp>
 #include <mapnik/vertex_converters.hpp>
+#include <mapnik/noncopyable.hpp>
+#include <mapnik/parse_path.hpp>
+
 // agg
 #include "agg_basics.h"
 #include "agg_rendering_buffer.h"
@@ -46,6 +47,39 @@
 #include "agg_span_pattern_rgba.h"
 #include "agg_renderer_outline_image.h"
 #include "agg_conv_clip_polyline.h"
+
+// boost
+#include <boost/foreach.hpp>
+
+namespace {
+
+class pattern_source : private mapnik::noncopyable
+{
+public:
+    pattern_source(mapnik::image_data_32 const& pattern)
+        : pattern_(pattern) {}
+
+    unsigned int width() const
+    {
+        return pattern_.width();
+    }
+    unsigned int height() const
+    {
+        return pattern_.height();
+    }
+    agg::rgba8 pixel(int x, int y) const
+    {
+        unsigned c = pattern_(x,y);
+        return agg::rgba8(c & 0xff,
+                          (c >> 8) & 0xff,
+                          (c >> 16) & 0xff,
+                          (c >> 24) & 0xff);
+    }
+private:
+    mapnik::image_data_32 const& pattern_;
+};
+
+}
 
 namespace mapnik {
 
@@ -99,23 +133,21 @@ void  agg_renderer<T>::process(line_pattern_symbolizer const& sym,
     if (sym.clip())
     {
         double padding = (double)(query_extent_.width()/pixmap_.width());
-        float half_stroke = (*mark)->width()/2.0;
+        double half_stroke = (*mark)->width()/2.0;
         if (half_stroke > 1)
             padding *= half_stroke;
-        double x0 = query_extent_.minx();
-        double y0 = query_extent_.miny();
-        double x1 = query_extent_.maxx();
-        double y1 = query_extent_.maxy();
-        clipping_extent.init(x0 - padding, y0 - padding, x1 + padding , y1 + padding);
+        padding *= scale_factor_;
+        clipping_extent.pad(padding);
     }
 
-    typedef boost::mpl::vector<clip_line_tag,transform_tag,smooth_tag> conv_types;
+    typedef boost::mpl::vector<clip_line_tag,transform_tag,simplify_tag,smooth_tag> conv_types;
     vertex_converter<box2d<double>, rasterizer_type, line_pattern_symbolizer,
                      CoordTransform, proj_transform, agg::trans_affine, conv_types>
         converter(clipping_extent,ras,sym,t_,prj_trans,tr,scale_factor_);
 
     if (sym.clip()) converter.set<clip_line_tag>(); //optional clip (default: true)
     converter.set<transform_tag>(); //always transform
+    if (sym.simplify_tolerance() > 0.0) converter.set<simplify_tag>(); // optional simplify converter
     if (sym.smooth() > 0.0) converter.set<smooth_tag>(); // optional smooth converter
 
     BOOST_FOREACH(geometry_type & geom, feature.paths())

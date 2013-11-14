@@ -22,7 +22,9 @@
 
 // boost
 #include <boost/foreach.hpp>
+
 // mapnik
+#include <mapnik/feature.hpp>
 #include <mapnik/debug.hpp>
 #include <mapnik/graphics.hpp>
 #include <mapnik/agg_renderer.hpp>
@@ -30,8 +32,10 @@
 #include <mapnik/agg_rasterizer.hpp>
 #include <mapnik/marker.hpp>
 #include <mapnik/marker_cache.hpp>
-#include <mapnik/expression_evaluator.hpp>
 #include <mapnik/vertex_converters.hpp>
+#include <mapnik/parse_path.hpp>
+#include <mapnik/polygon_pattern_symbolizer.hpp>
+
 // agg
 #include "agg_basics.h"
 #include "agg_rendering_buffer.h"
@@ -57,8 +61,12 @@ void agg_renderer<T>::process(polygon_pattern_symbolizer const& sym,
 
     agg::rendering_buffer buf(current_buffer_->raw_data(), width_, height_, width_ * 4);
     ras_ptr->reset();
-    set_gamma_method(sym,ras_ptr);
-
+    if (sym.get_gamma() != gamma_ || sym.get_gamma_method() != gamma_method_)
+    {
+        set_gamma_method(sym, ras_ptr);
+        gamma_method_ = sym.get_gamma_method();
+        gamma_ = sym.get_gamma();
+    }
     std::string filename = path_processor_type::evaluate( *sym.get_filename(), feature);
     boost::optional<mapnik::marker_ptr> marker;
     if ( !filename.empty() )
@@ -139,13 +147,14 @@ void agg_renderer<T>::process(polygon_pattern_symbolizer const& sym,
     agg::trans_affine tr;
     evaluate_transform(tr, feature, sym.get_transform());
 
-    typedef boost::mpl::vector<clip_poly_tag,transform_tag,smooth_tag> conv_types;
+    typedef boost::mpl::vector<clip_poly_tag,transform_tag,simplify_tag,smooth_tag> conv_types;
     vertex_converter<box2d<double>, rasterizer, polygon_pattern_symbolizer,
                      CoordTransform, proj_transform, agg::trans_affine, conv_types>
         converter(query_extent_,*ras_ptr,sym,t_,prj_trans,tr,scale_factor_);
 
     if (prj_trans.equal() && sym.clip()) converter.set<clip_poly_tag>(); //optional clip (default: true)
     converter.set<transform_tag>(); //always transform
+    if (sym.simplify_tolerance() > 0.0) converter.set<simplify_tag>(); // optional simplify converter
     if (sym.smooth() > 0.0) converter.set<smooth_tag>(); // optional smooth converter
 
     BOOST_FOREACH( geometry_type & geom, feature.paths())

@@ -24,23 +24,16 @@
 #define MAPNIK_MARKERS_PLACEMENT_HPP
 
 // mapnik
-#include <mapnik/markers_placement.hpp>
-#include <mapnik/geometry.hpp>
 #include <mapnik/ctrans.hpp>
+#include <mapnik/debug.hpp>
 #include <mapnik/label_collision_detector.hpp>
 #include <mapnik/global.hpp> //round
 #include <mapnik/box2d.hpp>
-
-// boost
-#include <boost/utility.hpp>
+#include <mapnik/noncopyable.hpp>
 
 // agg
 #include "agg_basics.h"
-#include "agg_conv_clip_polygon.h"
-#include "agg_conv_clip_polyline.h"
 #include "agg_trans_affine.h"
-#include "agg_conv_transform.h"
-#include "agg_conv_smooth_poly1.h"
 
 // stl
 #include <cmath>
@@ -48,7 +41,7 @@
 namespace mapnik {
 
 template <typename Locator, typename Detector>
-class markers_placement : boost::noncopyable
+class markers_placement : mapnik::noncopyable
 {
 public:
     /** Constructor for markers_placement object.
@@ -60,19 +53,34 @@ public:
      *                 converted to a positive value with similar magnitude, but
      *                 choosen to optimize marker placement. 0 = no markers
      */
-    markers_placement(Locator &locator, box2d<double> const& size, agg::trans_affine const& tr, Detector &detector, double spacing, double max_error, bool allow_overlap)
+    markers_placement(Locator &locator,
+                      box2d<double> const& size,
+                      agg::trans_affine const& tr,
+                      Detector &detector,
+                      double spacing,
+                      double max_error,
+                      bool allow_overlap)
       : locator_(locator),
         size_(size),
         tr_(tr),
         detector_(detector),
         max_error_(max_error),
-        allow_overlap_(allow_overlap)
+        allow_overlap_(allow_overlap),
+        marker_width_((size_ * tr_).width()),
+        done_(false),
+        last_x(0.0),
+        last_y(0.0),
+        next_x(0.0),
+        next_y(0.0),
+        error_(0.0),
+        spacing_left_(0.0),
+        marker_nr_(0)
     {
-      marker_width_ = (size_ * tr_).width();
       if (spacing >= 0)
       {
           spacing_ = spacing;
-      } else if (spacing < 0)
+      }
+      else if (spacing < 0)
       {
           spacing_ = find_optimal_spacing(-spacing);
       }
@@ -87,10 +95,10 @@ public:
     {
         locator_.rewind(0);
         //Get first point
-        done_ = agg::is_stop(locator_.vertex(&next_x, &next_y)) || spacing_ < marker_width_;
+        done_ = agg::is_stop(locator_.vertex(&next_x, &next_y));
         last_x = next_x;
         last_y = next_y; // Force request of new segment
-        error_ = 0;
+        error_ = 0.0;
         marker_nr_ = 0;
     }
 
@@ -104,7 +112,10 @@ public:
      */
     bool get_point(double & x, double  & y, double & angle,  bool add_to_detector = true)
     {
-        if (done_) return false;
+        if (done_)
+        {
+            return false;
+        }
         unsigned cmd;
         /* This functions starts at the position of the previous marker,
            walks along the path, counting how far it has to go in spacing_left.
@@ -116,16 +127,19 @@ public:
            error = 0: Perfect position.
            error < 0: Marker too near to the beginning of the path.
         */
-        if (marker_nr_++ == 0)
+        if (marker_nr_ == 0)
         {
             //First marker
+            marker_nr_++;
             spacing_left_ = spacing_ / 2;
-        } else
+        }
+        else
         {
             spacing_left_ = spacing_;
         }
         spacing_left_ -= error_;
-        error_ = 0;
+        error_ = 0.0;
+        double max_err_allowed = max_error_ * spacing_;
         //Loop exits when a position is found or when no more segments are available
         while (true)
         {
@@ -135,22 +149,21 @@ public:
                 set_spacing_left(marker_width_/2); //Only moves forward
             }
             //Error for this marker is too large. Skip to the next position.
-            if (abs(error_) > max_error_ * spacing_)
+            if (std::fabs(error_) > max_err_allowed)
             {
-                if (error_ > spacing_)
+                while (error_ > spacing_)
                 {
-                    error_ = 0; //Avoid moving backwards
-                    MAPNIK_LOG_WARN(markers_placement) << "Extremely large error in markers_placement. Please file a bug report.";
+                    error_ -= spacing_; //Avoid moving backwards
                 }
                 spacing_left_ += spacing_ - error_;
-                error_ = 0;
+                error_ = 0.0;
             }
             double dx = next_x - last_x;
             double dy = next_y - last_y;
             double segment_length = std::sqrt(dx * dx + dy * dy);
             if (segment_length <= spacing_left_)
             {
-                //Segment is to short to place marker. Find next segment
+                //Segment is too short to place marker. Find next segment
                 spacing_left_ -= segment_length;
                 last_x = next_x;
                 last_y = next_y;
@@ -160,7 +173,7 @@ public:
                     last_x = next_x;
                     last_y = next_y;
                 }
-                if (agg::is_stop(cmd))
+                if (agg::is_stop(cmd) || cmd == SEG_CLOSE)
                 {
                     done_ = true;
                     return false;
@@ -178,7 +191,8 @@ public:
                 //Segment to short => Skip this segment
                 set_spacing_left(segment_length + marker_width_/2); //Only moves forward
                 continue;
-            } else if (segment_length - spacing_left_ < marker_width_/2)
+            }
+            else if (segment_length - spacing_left_ < marker_width_/2)
             {
                 //Segment is long enough, but we are to close to the end
                 //Note: This function moves backwards. This could lead to an infinite
@@ -187,14 +201,15 @@ public:
                 if (error_ == 0)
                 {
                     set_spacing_left(segment_length - marker_width_/2, true);
-                } else
+                }
+                else
                 {
                     //Skip this segment
                     set_spacing_left(segment_length + marker_width_/2); //Only moves forward
                 }
                 continue; //Force checking of max_error constraint
             }
-            angle = atan2(dy, dx);
+            angle = std::atan2(dy, dx);
             x = last_x + dx * (spacing_left_ / segment_length);
             y = last_y + dy * (spacing_left_ / segment_length);
             box2d<double> box = perform_transform(angle, x, y);
@@ -217,13 +232,15 @@ private:
     agg::trans_affine tr_;
     Detector &detector_;
     double spacing_;
-    double marker_width_;
     double max_error_;
     bool allow_overlap_;
+    double marker_width_;
 
     bool done_;
-    double last_x, last_y;
-    double next_x, next_y;
+    double last_x;
+    double last_y;
+    double next_x;
+    double next_y;
     /** If a marker could not be placed at the exact point where it should
      * go the next marker's distance will be a bit lower. */
     double error_;
@@ -270,7 +287,7 @@ private:
                 last_y = next_y;
             }
         }
-        unsigned points = round(length / s);
+        unsigned points = static_cast<unsigned>(round(length / s));
         if (points == 0) return 0.0; //Path to short
         return length / points;
     }

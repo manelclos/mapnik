@@ -37,7 +37,7 @@
 
 // cairo
 #ifdef HAVE_CAIRO
-#include <cairomm/surface.h>
+#include <mapnik/cairo_context.hpp>
 #endif
 
 // boost
@@ -58,7 +58,7 @@ public:
     image_32(int width,int height);
     image_32(image_32 const& rhs);
 #ifdef HAVE_CAIRO
-    image_32(Cairo::RefPtr<Cairo::ImageSurface> rhs);
+    explicit image_32(cairo_surface_ptr const& surface);
 #endif
     ~image_32();
 
@@ -70,6 +70,11 @@ public:
     bool painted() const
     {
         return painted_;
+    }
+
+    inline void clear()
+    {
+        std::memset(data_.getData(),0,sizeof(mapnik::image_data_32::pixel_type)*data_.width()*data_.height());
     }
 
     boost::optional<color> const& get_background() const;
@@ -113,9 +118,9 @@ public:
 
 private:
 
-    inline bool checkBounds(unsigned x, unsigned y) const
+    inline bool checkBounds(int x, int y) const
     {
-        return (x < width_ && y < height_);
+        return (x >= 0 && x < static_cast<int>(width_) && y >= 0 && y < static_cast<int>(height_));
     }
 
 public:
@@ -179,9 +184,9 @@ public:
 #endif
         }
     }
-    
+
     void composite_pixel(unsigned op, int x,int y,unsigned c, unsigned cover, double opacity);
-    
+
     inline unsigned width() const
     {
         return width_;

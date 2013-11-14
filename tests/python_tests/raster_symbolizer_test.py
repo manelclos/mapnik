@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from nose.tools import *
-from utilities import execution_path, contains_word
+from utilities import execution_path, contains_word, get_unique_colors
 
 import os, mapnik
 
@@ -135,7 +135,7 @@ def test_raster_with_alpha_blends_correctly_with_background():
         mapnik.render(map, mim)
         imdata = mim.tostring()
         # All white is expected
-        assert contains_word('\xff\xff\xff\xff', imdata)
+        eq_(get_unique_colors(mim),['rgba(254,254,254,255)'])
 
 def test_raster_warping():
     lyrSrs = "+init=epsg:32630"
@@ -156,8 +156,10 @@ def test_raster_warping():
         _map.append_style('foo', style)
         lyr.styles.append('foo')
         _map.layers.append(lyr)
-        prj_trans = mapnik.ProjTransform(mapnik.Projection(mapSrs),
-                                          mapnik.Projection(lyrSrs))
+        map_proj = mapnik.Projection(mapSrs)
+        layer_proj = mapnik.Projection(lyrSrs)
+        prj_trans = mapnik.ProjTransform(map_proj,
+                                         layer_proj)
         _map.zoom_to_box(prj_trans.backward(lyr.envelope()))
 
         im = mapnik.Image(_map.width,_map.height)

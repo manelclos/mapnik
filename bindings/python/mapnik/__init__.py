@@ -67,7 +67,8 @@ def bootstrap_env():
 bootstrap_env()
 
 from _mapnik import *
-from paths import inputpluginspath, fontscollectionpath
+from paths import inputpluginspath
+from paths import fontscollectionpath
 
 import printing
 printing.renderer = render
@@ -557,26 +558,6 @@ def Osm(**keywords):
     keywords['type'] = 'osm'
     return CreateDatasource(keywords)
 
-def Kismet(**keywords):
-    """Create a Kismet Datasource.
-
-    Required keyword arguments:
-      host -- kismet hostname
-      port -- kismet port
-
-    Optional keyword arguments:
-      encoding -- file encoding (default 'utf-8')
-      extent -- manually specified data extent (comma delimited string, default None)
-
-    >>> from mapnik import Kismet, Layer
-    >>> datasource = Kismet(host='localhost',port=2501,extent='-179,-85,179,85')
-    >>> lyr = Layer('Kismet Server Layer')
-    >>> lyr.datasource = datasource
-
-    """
-    keywords['type'] = 'kismet'
-    return CreateDatasource(keywords)
-
 def Geos(**keywords):
     """Create a GEOS Vector Datasource.
 
@@ -783,11 +764,11 @@ class _TextSymbolizer(TextSymbolizer,_injector):
 
     @property
     def wrap_before(self):
-        return self.properties.wrap_before
+        return self.format.wrap_before
 
     @wrap_before.setter
     def wrap_before(self, wrap_before):
-        self.properties.wrap_before = wrap_before
+        self.format.wrap_before = wrap_before
 
 
     @property
@@ -996,20 +977,27 @@ class _TextSymbolizer(TextSymbolizer,_injector):
         self.properties.wrap_width = wrap_width
 
 
-
-
-
 def mapnik_version_from_string(version_string):
     """Return the Mapnik version from a string."""
     n = version_string.split('.')
     return (int(n[0]) * 100000) + (int(n[1]) * 100) + (int(n[2]));
 
-def register_plugins(path=inputpluginspath):
+def register_plugins(path=None):
     """Register plugins located by specified path"""
+    if not path:
+        if os.environ.has_key('MAPNIK_INPUT_PLUGINS_DIRECTORY'):
+            path = os.environ.get('MAPNIK_INPUT_PLUGINS_DIRECTORY')
+        else:
+            path = inputpluginspath
     DatasourceCache.register_datasources(path)
 
-def register_fonts(path=fontscollectionpath,valid_extensions=['.ttf','.otf','.ttc','.pfa','.pfb','.ttc','.dfont']):
+def register_fonts(path=None,valid_extensions=['.ttf','.otf','.ttc','.pfa','.pfb','.ttc','.dfont']):
     """Recursively register fonts using path argument as base directory"""
+    if not path:
+       if os.environ.has_key('MAPNIK_FONT_DIRECTORY'):
+           path = os.environ.get('MAPNIK_FONT_DIRECTORY')
+       else:
+           path = fontscollectionpath
     for dirpath, _, filenames in os.walk(path):
         for filename in filenames:
             if os.path.splitext(filename.lower())[1] in valid_extensions:

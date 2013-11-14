@@ -24,7 +24,6 @@
 #define MAPNIK_CTRANS_HPP
 
 // mapnik
-#include <mapnik/debug.hpp>
 #include <mapnik/box2d.hpp>
 #include <mapnik/vertex.hpp>
 #include <mapnik/proj_transform.hpp>
@@ -38,8 +37,27 @@ namespace mapnik
 template <typename Transform, typename Geometry>
 struct MAPNIK_DECL coord_transform
 {
+    // SFINAE value_type detector
+    template <typename T>
+    struct void_type
+    {
+        typedef void type;
+    };
+
+    template <typename T, typename D, typename _ = void>
+    struct select_value_type
+    {
+        typedef D type;
+    };
+
+    template <typename T, typename D>
+    struct select_value_type<T, D, typename void_type<typename T::value_type>::type>
+    {
+        typedef typename T::value_type type;
+    };
+
     typedef std::size_t size_type;
-    //typedef typename Geometry::value_type value_type;
+    typedef typename select_value_type<Geometry, void>::type value_type;
 
     coord_transform(Transform const& t,
                      Geometry & geom,
@@ -79,6 +97,11 @@ struct MAPNIK_DECL coord_transform
     void rewind(unsigned pos) const
     {
         geom_.rewind(pos);
+    }
+
+    unsigned type() const
+    {
+        return static_cast<unsigned>(geom_.type());
     }
 
     Geometry const& geom() const

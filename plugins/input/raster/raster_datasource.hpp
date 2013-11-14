@@ -44,17 +44,16 @@
 class raster_datasource : public mapnik::datasource
 {
 public:
-    raster_datasource(const mapnik::parameters& params, bool bind=true);
+    raster_datasource(const mapnik::parameters& params);
     virtual ~raster_datasource();
     datasource::datasource_t type() const;
     static const char * name();
     mapnik::featureset_ptr features(const mapnik::query& q) const;
-    mapnik::featureset_ptr features_at_point(mapnik::coord2d const& pt) const;
+    mapnik::featureset_ptr features_at_point(mapnik::coord2d const& pt, double tol = 0) const;
     mapnik::box2d<double> envelope() const;
     boost::optional<mapnik::datasource::geometry_t> get_geometry_type() const;
     mapnik::layer_descriptor get_descriptor() const;
     bool log_enabled() const;
-    void bind() const;
 
 private:
     mapnik::layer_descriptor desc_;
@@ -65,8 +64,8 @@ private:
     bool multi_tiles_;
     unsigned tile_size_;
     unsigned tile_stride_;
-    mutable unsigned width_;
-    mutable unsigned height_;
+    unsigned width_;
+    unsigned height_;
 };
 
 #endif // RASTER_DATASOURCE_HPP

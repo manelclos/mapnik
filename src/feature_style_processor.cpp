@@ -22,13 +22,26 @@
 
 // mapnik
 #include <mapnik/feature_style_processor_impl.hpp>
+#include <mapnik/agg_renderer.hpp>
+#include <mapnik/graphics.hpp>
+#include <mapnik/grid/grid_renderer.hpp>
+#include <mapnik/grid/grid.hpp>
+
+#if defined(HAVE_CAIRO)
+#include <cairo.h>
+#include <mapnik/cairo_renderer.hpp>
+#endif
+
+#if defined(SVG_RENDERER)
+#include <mapnik/svg/output/svg_renderer.hpp>
+#endif
 
 namespace mapnik
 {
 
 #if defined(HAVE_CAIRO)
-template class feature_style_processor<cairo_renderer<Cairo::Context> >;
-template class feature_style_processor<cairo_renderer<Cairo::Surface> >;
+template class feature_style_processor<cairo_renderer<cairo_ptr> >;
+template class feature_style_processor<cairo_renderer<cairo_surface_ptr> >;
 #endif
 
 #if defined(SVG_RENDERER)

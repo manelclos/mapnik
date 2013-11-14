@@ -21,13 +21,22 @@
  *****************************************************************************/
 
 // mapnik
-#include <mapnik/expression_string.hpp>
+
+#include <mapnik/config.hpp> // needed by msvc
+#include <mapnik/expression_string.hpp> // needed by msvc
+#include <mapnik/expression_node_types.hpp>
+#include <mapnik/expression_node.hpp>
+#include <mapnik/attribute.hpp>
+#include <mapnik/value.hpp>
 
 // boost
 #include <boost/variant.hpp>
+#if defined(BOOST_REGEX_HAS_ICU)
+#include <boost/regex/icu.hpp>          // for u32regex
+#endif
 
 // icu
-#include <unicode/uversion.h>
+#include <unicode/unistr.h>             // for UnicodeString
 
 
 namespace mapnik
@@ -112,7 +121,7 @@ struct expression_string : boost::static_visitor<void>
 #else
         str_ += x.pattern.str();
         str_ +="','";
-        str_ += x.pattern.str();
+        str_ += x.format;
 #endif
         str_ +="')";
     }

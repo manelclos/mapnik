@@ -20,29 +20,47 @@
  *
  *****************************************************************************/
 
+#if defined(HAVE_PNG)
 extern "C"
 {
 #include <png.h>
 }
+#endif
 
 // mapnik
-#include <mapnik/image_util.hpp>
+#if defined(HAVE_PNG)
 #include <mapnik/png_io.hpp>
+#endif
+
+#if defined(HAVE_TIFF)
 #include <mapnik/tiff_io.hpp>
+#endif
+
+#if defined(HAVE_JPEG)
+#include <mapnik/jpeg_io.hpp>
+#endif
+
+#include <mapnik/image_util.hpp>
+#include <mapnik/image_data.hpp>
 #include <mapnik/graphics.hpp>
 #include <mapnik/memory.hpp>
 #include <mapnik/image_view.hpp>
 #include <mapnik/palette.hpp>
 #include <mapnik/map.hpp>
 #include <mapnik/util/conversions.hpp>
-// jpeg
-#if defined(HAVE_JPEG)
-#include <mapnik/jpeg_io.hpp>
-#endif
 
 #ifdef HAVE_CAIRO
 #include <mapnik/cairo_renderer.hpp>
-#include <cairo-features.h>
+#include <cairo.h>
+#ifdef CAIRO_HAS_PDF_SURFACE
+#include <cairo-pdf.h>
+#endif // CAIRO_HAS_PDF_SURFACE
+#ifdef CAIRO_HAS_PS_SURFACE
+#include <cairo-ps.h>
+#endif // CAIRO_HAS_PS_SURFACE
+#ifdef CAIRO_HAS_SVG_SURFACE
+#include <cairo-svg.h>
+#endif // CAIRO_HAS_SVG_SURFACE
 #endif
 
 // boost
@@ -54,6 +72,7 @@ extern "C"
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 
 namespace mapnik
 {
@@ -105,13 +124,15 @@ void save_to_file(T const& image,
     else throw ImageWriterException("Could not write file to " + filename );
 }
 
+#if defined(HAVE_PNG)
 void handle_png_options(std::string const& type,
                         int * colors,
                         int * compression,
                         int * strategy,
                         int * trans_mode,
                         double * gamma,
-                        bool * use_octree)
+                        bool * use_octree,
+                        bool * use_miniz)
 {
     if (type == "png" || type == "png24" || type == "png32")
     {
@@ -138,19 +159,20 @@ void handle_png_options(std::string const& type,
             {
                 *use_octree = true;
             }
+            else if (t == "e=miniz")
+            {
+                *use_miniz = true;
+            }
             else if (boost::algorithm::starts_with(t, "c="))
             {
                 if (*colors < 0)
                     throw ImageWriterException("invalid color parameter: unavailable for true color images");
 
-                if (!mapnik::util::string2int(t.substr(2),*colors) || *colors < 0 || *colors > 256)
+                if (!mapnik::util::string2int(t.substr(2),*colors) || *colors < 1 || *colors > 256)
                     throw ImageWriterException("invalid color parameter: " + t.substr(2));
             }
             else if (boost::algorithm::starts_with(t, "t="))
             {
-                if (*colors < 0)
-                    throw ImageWriterException("invalid trans_mode parameter: unavailable for true color images");
-
                 if (!mapnik::util::string2int(t.substr(2),*trans_mode) || *trans_mode < 0 || *trans_mode > 2)
                     throw ImageWriterException("invalid trans_mode parameter: " + t.substr(2));
             }
@@ -173,9 +195,9 @@ void handle_png_options(std::string const& type,
                 */
                 if (!mapnik::util::string2int(t.substr(2),*compression)
                     || *compression < Z_DEFAULT_COMPRESSION
-                    || *compression > Z_BEST_COMPRESSION)
+                    || *compression > 10) // use 10 here rather than Z_BEST_COMPRESSION (9) to allow for MZ_UBER_COMPRESSION
                 {
-                    throw ImageWriterException("invalid compression parameter: " + t.substr(2) + " (only -1 through 9 are valid)");
+                    throw ImageWriterException("invalid compression parameter: " + t.substr(2) + " (only -1 through 10 are valid)");
                 }
             }
             else if (boost::algorithm::starts_with(t, "s="))
@@ -197,14 +219,23 @@ void handle_png_options(std::string const& type,
                 {
                     *strategy = Z_RLE;
                 }
+                else if (s == "fixed")
+                {
+                    *strategy = Z_FIXED;
+                }
                 else
                 {
                     throw ImageWriterException("invalid compression strategy parameter: " + s);
                 }
             }
         }
+        if ((*use_miniz == false) && *compression > Z_BEST_COMPRESSION)
+        {
+            throw ImageWriterException("invalid compression value: (only -1 through 9 are valid)");
+        }
     }
 }
+#endif
 
 template <typename T>
 void save_to_stream(T const& image,
@@ -214,16 +245,18 @@ void save_to_stream(T const& image,
 {
     if (stream && image.width() > 0 && image.height() > 0)
     {
-        //all this should go into image_writer factory
-        std::string t = boost::algorithm::to_lower_copy(type);
+        std::string t = type;
+        std::transform(t.begin(), t.end(), t.begin(), ::tolower);
         if (t == "png" || boost::algorithm::starts_with(t, "png"))
         {
+#if defined(HAVE_PNG)
             int colors  = 256;
             int compression = Z_DEFAULT_COMPRESSION;
             int strategy = Z_DEFAULT_STRATEGY;
             int trans_mode = -1;
             double gamma = -1;
             bool use_octree = true;
+            bool use_miniz = false;
 
             handle_png_options(t,
                                &colors,
@@ -231,27 +264,37 @@ void save_to_stream(T const& image,
                                &strategy,
                                &trans_mode,
                                &gamma,
-                               &use_octree);
+                               &use_octree,
+                               &use_miniz);
 
             if (palette.valid())
-                save_as_png8_pal(stream, image, palette, compression, strategy);
+            {
+                save_as_png8_pal(stream, image, palette, compression, strategy, use_miniz);
+            }
             else if (colors < 0)
-                save_as_png(stream, image, compression, strategy);
+            {
+                save_as_png(stream, image, compression, strategy, trans_mode, use_miniz);
+            }
             else if (use_octree)
-                save_as_png8_oct(stream, image, colors, compression, strategy);
+            {
+                save_as_png8_oct(stream, image, colors, compression, strategy, trans_mode, use_miniz);
+            }
             else
-                save_as_png8_hex(stream, image, colors, compression, strategy, trans_mode, gamma);
+            {
+                save_as_png8_hex(stream, image, colors, compression, strategy, trans_mode, gamma, use_miniz);
+            }
+#else
+            throw ImageWriterException("png output is not enabled in your build of Mapnik");
+#endif
         }
         else if (boost::algorithm::starts_with(t, "tif"))
         {
             throw ImageWriterException("palettes are not currently supported when writing to tiff format (yet)");
         }
-#if defined(HAVE_JPEG)
         else if (boost::algorithm::starts_with(t, "jpeg"))
         {
             throw ImageWriterException("palettes are not currently supported when writing to jpeg format");
         }
-#endif
         else throw ImageWriterException("unknown file type: " + type);
     }
     else throw ImageWriterException("Could not write to empty stream" );
@@ -265,16 +308,18 @@ void save_to_stream(T const& image,
 {
     if (stream && image.width() > 0 && image.height() > 0)
     {
-        //all this should go into image_writer factory
-        std::string t = boost::algorithm::to_lower_copy(type);
+        std::string t = type;
+        std::transform(t.begin(), t.end(), t.begin(), ::tolower);
         if (t == "png" || boost::algorithm::starts_with(t, "png"))
         {
+#if defined(HAVE_PNG)
             int colors  = 256;
-            int compression = Z_DEFAULT_COMPRESSION;
+            int compression = Z_DEFAULT_COMPRESSION; // usually mapped to z=6 in zlib
             int strategy = Z_DEFAULT_STRATEGY;
             int trans_mode = -1;
             double gamma = -1;
             bool use_octree = true;
+            bool use_miniz = false;
 
             handle_png_options(t,
                                &colors,
@@ -282,22 +327,36 @@ void save_to_stream(T const& image,
                                &strategy,
                                &trans_mode,
                                &gamma,
-                               &use_octree);
+                               &use_octree,
+                               &use_miniz);
 
             if (colors < 0)
-                save_as_png(stream, image, compression, strategy);
+            {
+                save_as_png(stream, image, compression, strategy, trans_mode, use_miniz);
+            }
             else if (use_octree)
-                save_as_png8_oct(stream, image, colors, compression, strategy);
+            {
+                save_as_png8_oct(stream, image, colors, compression, strategy, trans_mode, use_miniz);
+            }
             else
-                save_as_png8_hex(stream, image, colors, compression, strategy, trans_mode, gamma);
+            {
+                save_as_png8_hex(stream, image, colors, compression, strategy, trans_mode, gamma, use_miniz);
+            }
+#else
+            throw ImageWriterException("png output is not enabled in your build of Mapnik");
+#endif
         }
         else if (boost::algorithm::starts_with(t, "tif"))
         {
+#if defined(HAVE_TIFF)
             save_as_tiff(stream, image);
+#else
+            throw ImageWriterException("tiff output is not enabled in your build of Mapnik");
+#endif
         }
-#if defined(HAVE_JPEG)
         else if (boost::algorithm::starts_with(t, "jpeg"))
         {
+#if defined(HAVE_JPEG)
             int quality = 85;
             std::string const& val = t.substr(4);
             if (!val.empty())
@@ -308,8 +367,10 @@ void save_to_stream(T const& image,
                 }
             }
             save_as_jpeg(stream, quality, image);
-        }
+#else
+            throw ImageWriterException("jpeg output is not enabled in your build of Mapnik");
 #endif
+        }
         else throw ImageWriterException("unknown file type: " + type);
     }
     else throw ImageWriterException("Could not write to empty stream" );
@@ -323,6 +384,7 @@ void save_to_file(T const& image, std::string const& filename)
     {
         save_to_file<T>(image, filename, *type);
     }
+    else throw ImageWriterException("Could not write file to " + filename );
 }
 
 template <typename T>
@@ -333,6 +395,7 @@ void save_to_file(T const& image, std::string const& filename, rgba_palette cons
     {
         save_to_file<T>(image, filename, *type, palette);
     }
+    else throw ImageWriterException("Could not write file to " + filename );
 }
 
 #if defined(HAVE_CAIRO)
@@ -344,6 +407,7 @@ void save_to_cairo_file(mapnik::Map const& map, std::string const& filename, dou
     {
         save_to_cairo_file(map,filename,*type,scale_factor);
     }
+    else throw ImageWriterException("Could not write file to " + filename );
 }
 
 void save_to_cairo_file(mapnik::Map const& map,
@@ -354,37 +418,37 @@ void save_to_cairo_file(mapnik::Map const& map,
     std::ofstream file (filename.c_str(), std::ios::out|std::ios::trunc|std::ios::binary);
     if (file)
     {
-        Cairo::RefPtr<Cairo::Surface> surface;
+        cairo_surface_ptr surface;
         unsigned width = map.width();
         unsigned height = map.height();
         if (type == "pdf")
         {
-#if defined(CAIRO_HAS_PDF_SURFACE)
-            surface = Cairo::PdfSurface::create(filename,width,height);
+#ifdef CAIRO_HAS_PDF_SURFACE
+            surface = cairo_surface_ptr(cairo_pdf_surface_create(filename.c_str(),width,height),cairo_surface_closer());
 #else
             throw ImageWriterException("PDFSurface not supported in the cairo backend");
 #endif
         }
-#if defined(CAIRO_HAS_SVG_SURFACE)
+#ifdef CAIRO_HAS_SVG_SURFACE
         else if (type == "svg")
         {
-            surface = Cairo::SvgSurface::create(filename,width,height);
+            surface = cairo_surface_ptr(cairo_svg_surface_create(filename.c_str(),width,height),cairo_surface_closer());
         }
 #endif
-#if defined(CAIRO_HAS_PS_SURFACE)
+#ifdef CAIRO_HAS_PS_SURFACE
         else if (type == "ps")
         {
-            surface = Cairo::PsSurface::create(filename,width,height);
+            surface = cairo_surface_ptr(cairo_ps_surface_create(filename.c_str(),width,height),cairo_surface_closer());
         }
 #endif
-#if defined(CAIRO_HAS_IMAGE_SURFACE)
+#ifdef CAIRO_HAS_IMAGE_SURFACE
         else if (type == "ARGB32")
         {
-            surface = Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32,width,height);
+            surface = cairo_surface_ptr(cairo_image_surface_create(CAIRO_FORMAT_ARGB32,width,height),cairo_surface_closer());
         }
         else if (type == "RGB24")
         {
-            surface = Cairo::ImageSurface::create(Cairo::FORMAT_RGB24,width,height);
+            surface = cairo_surface_ptr(cairo_image_surface_create(CAIRO_FORMAT_RGB24,width,height),cairo_surface_closer());
         }
 #endif
         else
@@ -392,7 +456,7 @@ void save_to_cairo_file(mapnik::Map const& map,
             throw ImageWriterException("unknown file type: " + type);
         }
 
-        Cairo::RefPtr<Cairo::Context> context = Cairo::Context::create(surface);
+        //cairo_t * ctx = cairo_create(surface);
 
         // TODO - expose as user option
         /*
@@ -402,15 +466,14 @@ void save_to_cairo_file(mapnik::Map const& map,
           }
         */
 
-
-        mapnik::cairo_renderer<Cairo::Context> ren(map, context, scale_factor);
+        mapnik::cairo_renderer<cairo_ptr> ren(map, create_context(surface), scale_factor);
         ren.apply();
 
         if (type == "ARGB32" || type == "RGB24")
         {
-            surface->write_to_png(filename);
+            cairo_surface_write_to_png(&*surface, filename.c_str());
         }
-        surface->finish();
+        cairo_surface_finish(&*surface);
     }
 }
 

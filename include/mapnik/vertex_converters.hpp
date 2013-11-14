@@ -44,28 +44,34 @@
 #include <boost/fusion/include/make_vector.hpp>
 
 #include <boost/foreach.hpp>
-#include <boost/utility.hpp>
 #include <boost/array.hpp>
 
 // mapnik
-#include <mapnik/ctrans.hpp>
 #include <mapnik/agg_helpers.hpp>
 #include <mapnik/offset_converter.hpp>
+#include <mapnik/simplify_converter.hpp>
+#include <mapnik/noncopyable.hpp>
 
 // agg
 #include "agg_conv_clip_polygon.h"
 #include "agg_conv_clip_polyline.h"
+#include "agg_conv_close_polygon.h"
 #include "agg_conv_smooth_poly1.h"
 #include "agg_conv_stroke.h"
 #include "agg_conv_dash.h"
 #include "agg_conv_transform.h"
+#include "agg_conv_clipper.h"
+#include "agg_path_storage.h"
 
 namespace mapnik {
 
 struct transform_tag {};
 struct clip_line_tag {};
 struct clip_poly_tag {};
+struct clipper_tag {};
+struct close_poly_tag {};
 struct smooth_tag {};
+struct simplify_tag {};
 struct stroke_tag {};
 struct dash_tag {};
 struct affine_transform_tag {};
@@ -98,6 +104,19 @@ struct converter_traits<T,mapnik::smooth_tag>
     }
 };
 
+template <typename T>
+struct converter_traits<T,mapnik::simplify_tag>
+{
+    typedef T geometry_type;
+    typedef simplify_converter<geometry_type> conv_type;
+
+    template <typename Args>
+    static void setup(geometry_type & geom, Args const& args)
+    {
+        geom.set_simplify_algorithm(boost::fusion::at_c<2>(args).simplify_algorithm());
+        geom.set_simplify_tolerance(boost::fusion::at_c<2>(args).simplify_tolerance());
+    }
+};
 
 template <typename T>
 struct converter_traits<T, mapnik::clip_line_tag>
@@ -162,7 +181,6 @@ struct converter_traits<T,mapnik::clip_poly_tag>
 {
     typedef T geometry_type;
     typedef typename agg::conv_clip_polygon<geometry_type> conv_type;
-
     template <typename Args>
     static void setup(geometry_type & geom, Args const& args)
     {
@@ -171,6 +189,37 @@ struct converter_traits<T,mapnik::clip_poly_tag>
     }
 };
 
+template <typename T>
+struct converter_traits<T,mapnik::clipper_tag>
+{
+    typedef T geometry_type;
+    typedef typename agg::conv_clipper<geometry_type,agg::path_storage> conv_type;
+    template <typename Args>
+    static void setup(geometry_type & geom, Args const& args)
+    {
+        typename boost::mpl::at<Args,boost::mpl::int_<0> >::type box = boost::fusion::at_c<0>(args);
+        agg::path_storage * ps = new agg::path_storage(); // FIXME: this will leak memory!
+        ps->move_to(box.minx(),box.miny());
+        ps->line_to(box.minx(),box.maxy());
+        ps->line_to(box.maxx(),box.maxy());
+        ps->line_to(box.maxx(),box.miny());
+        ps->close_polygon();
+        geom.attach2(*ps, agg::clipper_non_zero);
+        //geom.reverse(true);
+    }
+};
+
+template <typename T>
+struct converter_traits<T,mapnik::close_poly_tag>
+{
+    typedef T geometry_type;
+    typedef typename agg::conv_close_polygon<geometry_type> conv_type;
+    template <typename Args>
+    static void setup(geometry_type & geom, Args const& args)
+    {
+        // no-op
+    }
+};
 
 template <typename T>
 struct converter_traits<T,mapnik::transform_tag>
@@ -217,7 +266,8 @@ struct converter_traits<T,mapnik::offset_transform_tag>
     static void setup(geometry_type & geom, Args const& args)
     {
         typename boost::mpl::at<Args,boost::mpl::int_<2> >::type sym = boost::fusion::at_c<2>(args);
-        geom.set_offset(sym.offset());
+        double scale_factor = boost::fusion::at_c<6>(args);
+        geom.set_offset(sym.offset()*scale_factor);
     }
 };
 
@@ -302,7 +352,7 @@ struct dispatcher
 
 
 template <typename B, typename R, typename S, typename T, typename P, typename A, typename C >
-struct vertex_converter : private boost::noncopyable
+struct vertex_converter : private mapnik::noncopyable
 {
     typedef C conv_types;
     typedef B bbox_type;
@@ -348,6 +398,16 @@ struct vertex_converter : private boost::noncopyable
         std::size_t index = boost::mpl::distance<iter,end>::value - 1;
         if (index < disp_.vec_.size())
             disp_.vec_[index]=1;
+    }
+
+    template <typename Conv>
+    void unset()
+    {
+        typedef typename boost::mpl::find<conv_types,Conv>::type iter;
+        typedef typename boost::mpl::end<conv_types>::type end;
+        std::size_t index = boost::mpl::distance<iter,end>::value - 1;
+        if (index < disp_.vec_.size())
+            disp_.vec_[index]=0;
     }
 
 

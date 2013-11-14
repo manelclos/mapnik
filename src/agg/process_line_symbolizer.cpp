@@ -21,6 +21,7 @@
  *****************************************************************************/
 
 // mapnik
+#include <mapnik/feature.hpp>
 #include <mapnik/graphics.hpp>
 #include <mapnik/agg_renderer.hpp>
 #include <mapnik/agg_helpers.hpp>
@@ -47,6 +48,7 @@
 
 // stl
 #include <string>
+#include <cmath>
 
 namespace mapnik {
 
@@ -64,7 +66,12 @@ void agg_renderer<T>::process(line_symbolizer const& sym,
     unsigned a=col.alpha();
 
     ras_ptr->reset();
-    set_gamma_method(stroke_, ras_ptr);
+    if (stroke_.get_gamma() != gamma_ || stroke_.get_gamma_method() != gamma_method_)
+    {
+        set_gamma_method(stroke_, ras_ptr);
+        gamma_method_ = stroke_.get_gamma_method();
+        gamma_ = stroke_.get_gamma();
+    }
 
     agg::rendering_buffer buf(current_buffer_->raw_data(),width_,height_, width_ * 4);
 
@@ -76,7 +83,7 @@ void agg_renderer<T>::process(line_symbolizer const& sym,
     typedef agg::renderer_base<pixfmt_comp_type> renderer_base;
     typedef boost::mpl::vector<clip_line_tag, transform_tag,
                                offset_transform_tag, affine_transform_tag,
-                               smooth_tag, dash_tag, stroke_tag> conv_types;
+                               simplify_tag, smooth_tag, dash_tag, stroke_tag> conv_types;
 
     pixfmt_comp_type pixf(buf);
     pixf.comp_op(static_cast<agg::comp_op_e>(sym.comp_op()));
@@ -89,18 +96,16 @@ void agg_renderer<T>::process(line_symbolizer const& sym,
     if (sym.clip())
     {
         double padding = (double)(query_extent_.width()/pixmap_.width());
-        float half_stroke = stroke_.get_width()/2.0;
+        double half_stroke = stroke_.get_width()/2.0;
         if (half_stroke > 1)
             padding *= half_stroke;
-        if (fabs(sym.offset()) > 0)
-            padding *= fabs(sym.offset()) * 1.2;
-        double x0 = query_extent_.minx();
-        double y0 = query_extent_.miny();
-        double x1 = query_extent_.maxx();
-        double y1 = query_extent_.maxy();
-        clipping_extent.init(x0 - padding, y0 - padding, x1 + padding , y1 + padding);
+        if (std::fabs(sym.offset()) > 0)
+            padding *= std::fabs(sym.offset()) * 1.2;
+        padding *= scale_factor_;
+        clipping_extent.pad(padding);
         // debugging
-        //box2d<double> inverse(x0 + padding, y0 + padding, x1 - padding , y1 - padding);
+        //box2d<double> inverse = query_extent_;
+        //inverse.pad(-padding);
         //draw_geo_extent(inverse,mapnik::color("red"));
     }
 
@@ -119,8 +124,9 @@ void agg_renderer<T>::process(line_symbolizer const& sym,
             converter(clipping_extent,ras,sym,t_,prj_trans,tr,scale_factor_);
         if (sym.clip()) converter.set<clip_line_tag>(); // optional clip (default: true)
         converter.set<transform_tag>(); // always transform
-        if (fabs(sym.offset()) > 0.0) converter.set<offset_transform_tag>(); // parallel offset
+        if (std::fabs(sym.offset()) > 0.0) converter.set<offset_transform_tag>(); // parallel offset
         converter.set<affine_transform_tag>(); // optional affine transform
+        if (sym.simplify_tolerance() > 0.0) converter.set<simplify_tag>(); // optional simplify converter
         if (sym.smooth() > 0.0) converter.set<smooth_tag>(); // optional smooth converter
 
         BOOST_FOREACH( geometry_type & geom, feature.paths())
@@ -139,8 +145,9 @@ void agg_renderer<T>::process(line_symbolizer const& sym,
 
         if (sym.clip()) converter.set<clip_line_tag>(); // optional clip (default: true)
         converter.set<transform_tag>(); // always transform
-        if (fabs(sym.offset()) > 0.0) converter.set<offset_transform_tag>(); // parallel offset
+        if (std::fabs(sym.offset()) > 0.0) converter.set<offset_transform_tag>(); // parallel offset
         converter.set<affine_transform_tag>(); // optional affine transform
+        if (sym.simplify_tolerance() > 0.0) converter.set<simplify_tag>(); // optional simplify converter
         if (sym.smooth() > 0.0) converter.set<smooth_tag>(); // optional smooth converter
         if (stroke_.has_dash()) converter.set<dash_tag>();
         converter.set<stroke_tag>(); //always stroke
@@ -154,7 +161,6 @@ void agg_renderer<T>::process(line_symbolizer const& sym,
         }
 
         typedef agg::renderer_scanline_aa_solid<renderer_base> renderer_type;
-        renderer_base renb(pixf);
         renderer_type ren(renb);
         ren.color(agg::rgba8_pre(r, g, b, int(a * stroke_.get_opacity())));
         agg::scanline_u8 sl;

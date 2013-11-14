@@ -26,13 +26,17 @@
 // mapnik
 #include <mapnik/image_data.hpp>
 #include <mapnik/config.hpp>
-
+#include <mapnik/noncopyable.hpp>
+#include <mapnik/factory.hpp>
+// boost
+#include <boost/optional.hpp>
 // stl
 #include <stdexcept>
 #include <string>
 
 namespace mapnik
 {
+
 class image_reader_exception : public std::exception
 {
 private:
@@ -49,17 +53,21 @@ public:
     }
 };
 
-struct MAPNIK_DECL image_reader
+struct MAPNIK_DECL image_reader : private mapnik::noncopyable
 {
     virtual unsigned width() const=0;
     virtual unsigned height() const=0;
+    virtual bool premultiplied_alpha() const=0;
     virtual void read(unsigned x,unsigned y,image_data_32& image)=0;
     virtual ~image_reader() {}
 };
 
 bool register_image_reader(std::string const& type,image_reader* (*)(std::string const&));
+bool register_image_reader(std::string const& type,image_reader* (*)(char const*, std::size_t));
+
 MAPNIK_DECL image_reader* get_image_reader(std::string const& file,std::string const& type);
 MAPNIK_DECL image_reader* get_image_reader(std::string const& file);
+MAPNIK_DECL image_reader* get_image_reader(char const* data, size_t size);
 
 }
 
